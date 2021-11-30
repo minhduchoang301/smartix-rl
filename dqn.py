@@ -72,17 +72,17 @@ class Agent:
         # Log
         if output_path == None:
             path = os.path.join('output', '{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(
-                str(time.time()), 
-                self.alpha, 
-                self.gamma, 
-                self.n_steps, 
-                self.memory_size, 
-                self.target_update_interval, 
-                self.batch_size, 
-                self.epsilon_min, 
-                self.epsilon_decay, 
+                str(time.time()),
+                self.alpha,
+                self.gamma,
+                self.n_steps,
+                self.memory_size,
+                self.target_update_interval,
+                self.batch_size,
+                self.epsilon_min,
+                self.epsilon_decay,
                 str(tag))
-            )
+                                )
         else:
             path = os.path.join('output', output_path)
         if not os.path.isdir(path): os.makedirs(path)
@@ -105,15 +105,17 @@ class Agent:
     """
         Model
     """
+
     def load_model(self, path):
-        self.qnet.load_state_dict(torch.load(path+'/model.pkl'))
+        self.qnet.load_state_dict(torch.load(path + '/model.pkl'))
 
     def save_model(self):
-        torch.save(self.qnet.state_dict(), self.output_path+'model.pkl')
+        torch.save(self.qnet.state_dict(), self.output_path + 'model.pkl')
 
     """
         Training
     """
+
     def choose_action(self, state):
         if random.random() > self.epsilon:
             state = torch.tensor(state, dtype=torch.float).unsqueeze(0)
@@ -126,7 +128,7 @@ class Agent:
     def learn_batch(self):
         s0, a, r, s1, done = self.memory.sample(self.batch_size)
 
-        q_values = self.qnet(s0).gather(1,a)
+        q_values = self.qnet(s0).gather(1, a)
         max_q_values = self.qnet_target(s1).max(1)[0].unsqueeze(1)
         q_targets = r + self.gamma * max_q_values
 
@@ -136,7 +138,7 @@ class Agent:
         loss.backward()
         self.optimizer.step()
         return loss.item()
-    
+
     def learn_episode(self, episode_batch):
         s0, a, r, s1, done = zip(*episode_batch)
         s0 = torch.tensor(s0, dtype=torch.float)
@@ -144,7 +146,7 @@ class Agent:
         a = torch.tensor(a, dtype=torch.long)
         r = torch.tensor(r, dtype=torch.float)
 
-        q_values = self.qnet(s0).gather(1,a)
+        q_values = self.qnet(s0).gather(1, a)
         max_q_values = self.qnet_target(s1).max(1)[0].unsqueeze(1)
         q_targets = r + self.gamma * max_q_values
 
@@ -213,20 +215,22 @@ class Agent:
                 start = time.time()
 
                 # Print stats
-                print("episode: %2d \t acc_reward: %10.3f \t batch_loss: %8.8f \t elapsed: %6.2f \t epsilon: %2.4f" % (episode_num, episode_reward, batch_loss, float(elapsed), self.epsilon))
-                
-                # Save logs
-                log = "%2d\t%8.3f\t%8.8f\t%.2f\t%.4f\n" % (episode_num, episode_reward, batch_loss, elapsed, self.epsilon)
+                print("episode: %2d \t acc_reward: %10.3f \t batch_loss: %8.8f \t elapsed: %6.2f \t epsilon: %2.4f" % (
+                episode_num, episode_reward, batch_loss, float(elapsed), self.epsilon))
 
-                with open(self.output_path+'log.txt', 'a+') as f:
+                # Save logs
+                log = "%2d\t%8.3f\t%8.8f\t%.2f\t%.4f\n" % (
+                episode_num, episode_reward, batch_loss, elapsed, self.epsilon)
+
+                with open(self.output_path + 'log.txt', 'a+') as f:
                     f.write(log)
-                with open(self.output_path+'states_history.json', 'w+') as f:
+                with open(self.output_path + 'states_history.json', 'w+') as f:
                     json.dump(states_history, f)
-                with open(self.output_path+'actions_history.json', 'w+') as f:
+                with open(self.output_path + 'actions_history.json', 'w+') as f:
                     json.dump(actions_history, f)
-                with open(self.output_path+'rewards_history.json', 'w+') as f:
+                with open(self.output_path + 'rewards_history.json', 'w+') as f:
                     json.dump(rewards_history, f)
-                with open(self.output_path+'transitions_history.json', 'w+') as f:
+                with open(self.output_path + 'transitions_history.json', 'w+') as f:
                     json.dump(transitions_history, f)
 
                 # Stats
@@ -249,9 +253,9 @@ class Agent:
 
                 # Save model checkpoint
                 self.save_model()
-                
+
                 self.env.debug()
-            
+
         # Close and finish
         self.env.close()
 
@@ -268,7 +272,7 @@ class Agent:
 
         # IMPORTANT!!!!!!!!!!
         self.load_model(model_path)
-        self.epsilon = 0.0
+        self.epsilon = 0.0100
 
         # Reset environment
         print("Preparing environment...")
@@ -276,13 +280,12 @@ class Agent:
         states_history.append(state.tolist())
 
         # Start training
-        print("Started training...")
+        print("Started testing...")
         start = time.time()
-        for step in range(self.n_steps):
+        for step in range(100):
 
             # Choose action
             action = self.choose_action(state)
-
             # Apply action
             next_state, reward, done, _ = self.env.step(action)
 
@@ -298,27 +301,28 @@ class Agent:
 
             # Save interval
             if (step != 0 and step % self.target_update_interval == 0):
-
                 # Update step time
                 end = time.time()
                 elapsed = end - start
                 start = time.time()
-
+                print("index size", self.env.get_indexes_size())
                 # Print stats
-                print("episode: %2d \t acc_reward: %10.3f \t batch_loss: %8.8f \t elapsed: %6.2f \t epsilon: %2.4f" % (episode_num, episode_reward, batch_loss, float(elapsed), self.epsilon))
-                
-                # Save logs
-                log = "%2d\t%8.3f\t%8.8f\t%.2f\t%.4f\n" % (episode_num, episode_reward, batch_loss, elapsed, self.epsilon)
+                print("episode: %2d \t acc_reward: %10.3f \t batch_loss: %8.8f \t elapsed: %6.2f \t epsilon: %2.4f" % (
+                episode_num, episode_reward, batch_loss, float(elapsed), self.epsilon))
 
-                with open(self.output_path+'log.txt', 'a+') as f:
+                # Save logs
+                log = "%2d\t%8.3f\t%8.8f\t%.2f\t%.4f\n" % (
+                episode_num, episode_reward, batch_loss, elapsed, self.epsilon)
+
+                with open(self.output_path + 'log.txt', 'a+') as f:
                     f.write(log)
-                with open(self.output_path+'states_history.json', 'w+') as f:
+                with open(self.output_path + 'states_history.json', 'w+') as f:
                     json.dump(states_history, f)
-                with open(self.output_path+'actions_history.json', 'w+') as f:
+                with open(self.output_path + 'actions_history.json', 'w+') as f:
                     json.dump(actions_history, f)
-                with open(self.output_path+'rewards_history.json', 'w+') as f:
+                with open(self.output_path + 'rewards_history.json', 'w+') as f:
                     json.dump(rewards_history, f)
-                with open(self.output_path+'transitions_history.json', 'w+') as f:
+                with open(self.output_path + 'transitions_history.json', 'w+') as f:
                     json.dump(transitions_history, f)
 
                 # Stats
@@ -328,15 +332,23 @@ class Agent:
                 batch_loss = 0
 
                 self.env.debug()
-            
+        indexes_dict = self.env.db.get_indexes()
+        result = []
+        for table in self.env.db.tables:
+            for column in self.env.db.tables[table]:
+                if indexes_dict[column] == 1:
+                    result.append((table, column))
         # Close and finish
         self.env.close()
+        return result
+
 
 if __name__ == "__main__":
     import os
+
     print("Restarting PostgreSQL...")
-    os.system('sudo systemctl restart postgresql@12-main')
-    
+    os.system('sudo service postgres restart')
+
     # agent1 = Agent(env=Environment(window_size=40, shift=False), tag='winsize40_noshift')
     # agent2 = Agent(env=Environment(window_size=80, shift=False), tag='winsize80_noshift')
     # agent1.train()
@@ -355,4 +367,7 @@ if __name__ == "__main__":
     # agent1.train()
 
     agent_test = Agent(env=Environment(window_size=40, shift=False), tag='winsize40_model40_test_10gb')
-    agent_test.test(model_path='results/0.0001_0.9_100000_10000_128_1024_0.01_0.01_winsize40 (BEST)')
+    # agent_test.test(model_path='results/0.0001_0.9_100000_10000_128_1024_0.01_0.01_winsize40 (BEST)')
+    # agent_test.test(model_path='output/1637333443.3526177_0.0001_0.9_100000_10000_128_1024_0.01_0.01_winsize40_noshift')
+    agent_test.test(
+        model_path='/home/hmduc9c2/smartix/smartix-rl/output/1637785785.0371192_0.0001_0.9_100000_10000_128_1024_0.01_0.01_winsize40_noshift')

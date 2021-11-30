@@ -1,4 +1,5 @@
 from pg_database import PG_Database
+from mysql_database import MySQL_Database
 import numpy as np
 import time
 import random
@@ -6,8 +7,8 @@ import random
 class Environment():
     def __init__(self, workload_path='data/workload/tpch.sql', shift=False, hypo=True, allow_columns=True, flip=True, no_op=True, window_size=80, reward_func=1):
         # DBMS
-        self.db = PG_Database(hypo=hypo)
-
+        #self.db = MySQL_Database()
+        self.db = PG_Database()
         # Database
         self.table_columns = self.db.tables
         self.tables = list(self.table_columns.keys())
@@ -59,10 +60,10 @@ class Environment():
         s_prime, reward = self.apply_transition(action)
 
         return s_prime, reward, False, dict()
-    
+
     def reset(self):
         # Workload and indexes
-        self.db.reset_indexes()        
+        self.db.reset_indexes()
         self.workload_iterator = 0
 
         # Set current workload
@@ -79,20 +80,20 @@ class Environment():
         self.workload_buffer, self.usage_history, self.cost_history, self.column_history = self.initialize_window(self.window_size)
 
         return self.get_state()
-    
+
     def close(self):
         self.db.reset_indexes()
         return self.db.close_connection()
 
     def debug(self):
         indexes_dict = self.db.get_indexes()
+        print(indexes_dict)
         if indexes_dict['c_acctbal'] == 1: print('c_acctbal')
         if indexes_dict['p_brand'] == 1: print('p_brand')
         if indexes_dict['p_container'] == 1: print('p_container')
         if indexes_dict['p_size'] == 1: print('p_size')
         if indexes_dict['l_shipdate'] == 1: print('l_shipdate')
         if indexes_dict['o_orderdate'] == 1: print('o_orderdate')
-        print(sum(indexes_dict.values()))
         print("")
 
     """
@@ -104,9 +105,9 @@ class Environment():
             compute_reward_cost
             compute_reward_cost_difference
     """
-    
+
     # def compute_reward_weight_indexes(self, changed, drop, table, column):
-    #     if not changed: 
+    #     if not changed:
     #         print('NOT CHANGED')
     #         return -1
 
@@ -149,13 +150,13 @@ class Environment():
     #             reward = -15
     #         else: # CRIA > 0 - BOM
     #             reward = 10
-        
+
     #     return reward
 
     def compute_reward_weight_columns(self, changed, drop, table, column):
         column_count = self.get_column_count_window()
         count = column_count[self.columns.index(column)]
-        
+
         threshold = 1
         reward = 0
         if drop and count > threshold:
@@ -174,23 +175,23 @@ class Environment():
         cost_avg = cost/self.window_size
         reward = (1/cost_avg) * 100000
         return reward
-    
+
     def compute_reward_cost(self, query):
         cost = self.db.get_query_cost(query)
         reward = (1/cost) * 100000
         return reward
-    
+
     def compute_reward_cost_difference(self, column):
         prev_cost = sum(self.cost_history[-self.window_size:])
         curr_cost = sum([self.db.get_query_cost(q) for q in self.workload_buffer])
         cost_diff = prev_cost - curr_cost
-        if cost_diff > 0: 
+        if cost_diff > 0:
             reward = 10
         if cost_diff < 0: reward = -20
         else: reward = -1
 
         return reward
-    
+
     def compute_reward_query_use(self, changed, drop, column):
         use = 0
         usage_count = self.get_usage_count_window()
@@ -232,7 +233,7 @@ class Environment():
         if self.no_op and action == self.n_actions - 1:
             # Execute next_query
             query = self.step_workload()
-            
+
             # Update usage history
             self.usage_history.append(np.zeros(len(self.columns)).tolist())
 
@@ -258,15 +259,14 @@ class Environment():
             if self.reward_func == 2: reward = self.compute_reward_cost(query)
             if self.reward_func == 3: reward = self.compute_reward_cost_difference(column)
             if self.reward_func == 4: reward = self.compute_reward_avg_cost_window()
-        
+
         # Get next state
         s_prime = self.get_state()
 
         return s_prime, reward
-    
+
     def apply_index_change(self, action):
         indexes = self.db.get_indexes()
-
         if self.no_op:
             n_actions = self.n_actions - 1
         else:
@@ -274,10 +274,10 @@ class Environment():
 
         # Check if drop
         drop = False
-        if action >= n_actions/2: 
+        if action >= n_actions/2:
             drop = True
             action = int(action - n_actions/2)
-        
+
         # Get table and column
         column = self.columns[action]
         for table_name in self.tables:
@@ -286,18 +286,20 @@ class Environment():
 
         # Apply change
         if drop:
-            if indexes[column] == 0: 
+            if indexes[column] == 0:
                 changed = False
             else:
+                print("drop table at column", table, column)
                 self.db.drop_index(table, column)
                 changed = True
         else:
             if indexes[column] == 1:
                 changed = False
-            else: 
+            else:
+                print("create table at column", table, column)
                 self.db.create_index(table, column)
                 changed = True
-                
+
         return changed, drop, table, column
 
     def apply_index_change_flip(self, action):
@@ -310,18 +312,18 @@ class Environment():
             if column in columns:
                 table = table_name
                 break
-        
+
         # WORKAROUND FOR WEIRD COLUMN THAT DOES NOT WORK CREATING INDEX
         if column == 's_comment': return False, False, table, column
 
         # Apply change
-        if indexes[column] == 1: 
+        if indexes[column] == 1:
             self.db.drop_index(table, column)
             drop = True
         else:
             self.db.create_index(table, column)
             drop = False
-        
+
         return True, drop, table, column
 
     def step_workload(self):
@@ -332,7 +334,7 @@ class Environment():
         # self.db.execute(query, verbose=True)
         # end = time.time()
         # elapsed_time = end - start
-        
+
         # Update window
         # self.index_count.append(self.get_index_count(query))
         self.column_history.append(self.get_column_count(query))
@@ -357,9 +359,9 @@ class Environment():
                     else:
                         self.current_workload = self.workload[:self.shift_point]
                         self.first_shift = True
-        
+
         return query
-    
+
     def random_step_workload(self):
         query = random.choice(self.workload)
 
@@ -368,7 +370,7 @@ class Environment():
         # self.db.execute(query)
         # end = time.time()
         # elapsed_time = end - start
-        
+
         # Update window
         # self.index_count.append(self.get_index_count(query))
         self.column_history.append(self.get_column_count(query))
@@ -398,7 +400,7 @@ class Environment():
     #                 index_count[self.columns.index(column)] = count
     #                 if create: self.db.drop_index(table, column)
     #     return index_count
-    
+
     # def get_index_count_window(self):
     #     total_count = [0] * len(self.columns)
     #     for count in self.index_count[-self.window_size:]:
@@ -428,7 +430,7 @@ class Environment():
         for column in where_columns:
             column_count[self.columns.index(column)] = 1
         return column_count.tolist()
-    
+
     def get_column_count_window(self):
         total_count = [0] * len(self.columns)
         for count in self.column_history[-self.window_size:]:
@@ -468,7 +470,7 @@ class Environment():
             usage_history.append(np.zeros(len(self.columns)).tolist())  # Blank init
 
         return workload_buffer, usage_history, cost_history, column_history
-    
+
     def get_state(self):
         if self.allow_columns:
             indexes = np.array(list(self.db.get_indexes().values()), dtype=int)
@@ -480,32 +482,35 @@ class Environment():
             indexes = np.array(list(self.db.get_indexes().values()), dtype=int)
             state = indexes
         return state
-    
+
     def load_workload(self, path):
         with open(path, 'r') as f:
             data = f.read()
         workload = data.split('\n')
         return workload
 
+    def get_indexes_size(self):
+        return self.db.get_indexes_size()
+
 
 if __name__ == "__main__":
     from pprint import pprint
-    
+
     env = Environment(hypo=True)
     env.reset()
 
     print(len(env.columns))
-
-    # buffer = list()
-    # window = 22
-    # iterator = 0
-    # while True:
-    #     buffer.append(env.workload[iterator])
-    #     iterator += 1
-    #     if iterator == len(env.workload):
-    #         iterator = 0
-    #     if len(buffer) == window: break
-    # print('Buffer', len(buffer))
+    print(env.table_columns)
+    buffer = list()
+    window = 22
+    iterator = 0
+    while True:
+        buffer.append(env.workload[iterator])
+        iterator += 1
+        if iterator == len(env.workload):
+            iterator = 0
+        if len(buffer) == window: break
+    print('Buffer', len(buffer))
 
     # while True:
     #     new_query = env.workload[iterator]
@@ -517,22 +522,22 @@ if __name__ == "__main__":
     #         total_use = 0
     #         for q in buffer:
     #             total_use = env.db.get_query_use(q, col)
-    #             if total_use > 0: 
+    #             if total_use > 0:
     #                 break
     #         print(total_use, col, len(buffer))
     #     print("")
 
-    # env.close()
+    env.close()
 
-    #state = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
+    state = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
 
-    # for idx, value in enumerate(state):
-    #     if value == 1:
-    #         print(env.columns[idx])
+    for idx, value in enumerate(state):
+        if value == 1:
+            print(env.columns[idx])
 
-    #print(env.columns[12])
-    #print(env.columns[20])
-    #print(env.columns[22])
-    #print(env.columns[23])
-    #print(env.columns[28])
-    #print(env.columns[39])
+    print(env.columns[12])
+    print(env.columns[20])
+    print(env.columns[22])
+    print(env.columns[23])
+    print(env.columns[28])
+    print(env.columns[39])

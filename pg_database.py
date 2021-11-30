@@ -1,23 +1,31 @@
 import psycopg2
 import json
+import time
 
 
 class PG_Database():
     def __init__(self, hypo=True, analyze=False):
         # Get credentials
-        with open('data/db_credentials_pg.json', 'r') as f:
-            self.credentials = json.load(f)
-
+        # with open('data/db_credentials_pg.json', 'r') as f:
+        #    self.credentials = json.load(f)
+        self.credentials = {}
+        self.credentials['user'] = 'postgres'
+        self.credentials['host'] = 'localhost'
+        self.credentials['port'] = 5432
+        self.credentials['database'] = 'tpch'
+        self.credentials['password'] = 'postgres'
         # Connect to database
         try:
-            self.conn = psycopg2.connect(user = self.credentials['user'],
-                                         password = self.credentials['password'],
-                                         host = self.credentials['host'],
-                                         port = self.credentials['port'],
-                                         database = self.credentials['database'])
+            self.conn = psycopg2.connect(user=self.credentials['user'],
+                                         password=self.credentials['password'],
+                                         host=self.credentials['host'],
+                                         port=self.credentials['port'],
+                                         database=self.credentials['database'])
+            # self.conn = psycopg2.connect(user = self.credentials['user'],
+            #                              database = self.credentials['database'])
             # Set to autocommit transactions
             self.conn.autocommit = True
-        except psycopg2.Error as err: 
+        except psycopg2.Error as err:
             print("ERROR: {}".format(err))
 
         # Create hypothetical indexes
@@ -34,7 +42,7 @@ class PG_Database():
         explain = output[0][0][0]
         cost = float(explain['Plan']['Total Cost'])
         return cost
-    
+
     def get_query_use(self, query, column):
         # Get explain plan
         command = "EXPLAIN {}".format(query)
@@ -43,8 +51,10 @@ class PG_Database():
         for row in output:
             if 'pkey' in row[0]: continue
             if 'fkey' in row[0]: continue
-            if 'Index Scan on' in row[0] and column in row[0]: return 1
-            elif 'Index Scan using' in row[0] and column in row[0]: return 1
+            if 'Index Scan on' in row[0] and column in row[0]:
+                return 1
+            elif 'Index Scan using' in row[0] and column in row[0]:
+                return 1
         return 0
 
     def get_tables(self):
@@ -63,13 +73,13 @@ class PG_Database():
                 if table not in tables.keys():
                     tables[table] = list()
                 tables[table].append(column)
-        
+
         # Return dict with valid columns for indexing
         return tables
 
     def get_indexes(self):
         if self.hypo:
-            command = "SELECT * FROM hypopg_list_indexes();"
+            command = "SELECT * FROM hypopg_list_indexes;"
             output = self.execute_fetchall(command)
             index_names = list(set([row[1] for row in output]))
             indexes = dict()
@@ -96,7 +106,7 @@ class PG_Database():
     def drop_index(self, table, column, verbose=False):
         if self.hypo:
             # Get all indexes
-            command = "SELECT * FROM hypopg_list_indexes();"
+            command = "SELECT * FROM hypopg_list_indexes;"
             indexes = self.execute_fetchall(command)
             # Iterate indexes and check column match
             for index in indexes:
@@ -112,7 +122,8 @@ class PG_Database():
 
     def create_index(self, table, column, verbose=False):
         if self.hypo:
-            command = "SELECT * FROM hypopg_create_index('CREATE INDEX smartix_%s ON %s (%s)');" % (column, table, column)
+            command = "SELECT * FROM hypopg_create_index('CREATE INDEX smartix_%s ON %s (%s)');" % (
+            column, table, column)
             self.execute(command, verbose)
         else:
             command = "CREATE INDEX smartix_%s ON %s (%s);" % (column, table, column)
@@ -152,7 +163,7 @@ class PG_Database():
             if verbose: print('OK: {}'.format(command))
         except psycopg2.DatabaseError as err:
             print('ERROR: {}'.format(err))
-    
+
     def execute_fetchall(self, command, verbose=False):
         try:
             cur = self.conn.cursor()
@@ -164,17 +175,49 @@ class PG_Database():
         except psycopg2.DatabaseError as err:
             print('ERROR: {}'.format(err))
 
+    def get_indexes_size(self):
+        try:
+            result = 0
+            cur = self.conn.cursor()
+            for table in self.tables:
+                cur.execute("select pg_indexes_size('{}');".format(table))
+                output = cur.fetchall()
+                result += output[0][0]
+            cur.close()
+            return result
+        except psycopg2.DatabaseError as err:
+            print('ERROR: {}'.format(err))
+            return -1
+
+    def create_all_index(self):
+        for table in self.tables:
+            for column in self.tables[table]:
+                self.create_index(table, column)
+
+    def get_all_query_execution_time(self):
+        path = 'data/workload/tpch.sql'
+        with open(path, 'r') as f:
+            data = f.read()
+        workload = data.split('\n')
+        result = []
+        cur = self.conn.cursor()
+        for line in workload:
+            start = time.time()
+            cur.execute(line)
+            end = time.time()
+            result.append(end - start)
+        cur.close()
+        return result
+
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from pprint import pprint
 
-
     #################################################
 
-
     db = PG_Database(hypo=True)
-
+    db.get_all_query_execution_time()
     # Get workload
     with open('data/workload/tpch_shift.sql', 'r') as f:
         data = f.read()
